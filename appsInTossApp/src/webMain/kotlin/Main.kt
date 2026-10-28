@@ -1,5 +1,4 @@
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -15,54 +14,81 @@ fun main() {
     ComposeViewport(viewportContainerId = "compose-root") {
         val client = remember { createAppsInTossClient() }
         val scope = rememberCoroutineScope()
-        val navigation = remember { ServiceNavigation() }
-        val storage = remember { BrowserDraftStorage() }
-        var status by remember { mutableStateOf("앱인토스 전용 영역이에요. 현재 환경: ${client.host}") }
+        val storage = remember { BrowserStorage() }
+        var userKey by remember { mutableStateOf<String?>(null) }
+        var loadingUser by remember { mutableStateOf(true) }
+        var exitRequested by remember { mutableStateOf(false) }
+        var message by remember { mutableStateOf<String?>(null) }
         var insets by remember { mutableStateOf(SafeAreaInsets(0.0, 0.0, 0.0, 0.0)) }
         DisposableEffect(client) { onDispose { client.close() } }
+        LaunchedEffect(client) {
+            if (client.supports(Capability.USER_ID)) {
+                try {
+                    userKey = client.getAnonymousKey()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // Without a key the game still works but records stay in memory.
+                }
+            }
+            loadingUser = false
+        }
         LaunchedEffect(client) {
             if (client.host != RuntimeHost.BROWSER) {
                 try {
                     client.events.collect { event ->
                         when (event) {
                             is HostEvent.SafeArea -> insets = event.insets
-                            HostEvent.Back -> if (!navigation.back()) client.closeScreen()
-                            HostEvent.Home -> navigation.selectedId = null
+                            HostEvent.Back -> exitRequested = true
+                            HostEvent.Home -> exitRequested = false
                         }
                     }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
-                    status = "호스트 이벤트를 연결하지 못했어요."
+                    message = "호스트 이벤트를 연결하지 못했어요."
                 }
             }
         }
         Box(Modifier.padding(top = insets.top.dp, bottom = insets.bottom.dp, start = insets.left.dp, end = insets.right.dp)) {
-            ServiceApp(state = navigation, storage = storage, showBackButton = client.host == RuntimeHost.MOCK, onShare = { text ->
-                scope.launch {
-                    try {
-                        client.shareText(text)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) {
-                        status = "공유하지 못했어요."
-                    }
-                }
-            }, hostContent = {
-                Text(status)
-                Button(enabled = client.supports(Capability.TOSS_LOGIN), onClick = {
+            RpsApp(
+                userKey = userKey,
+                loadingUser = loadingUser,
+                storage = storage,
+                exitRequested = exitRequested,
+                // The mock bridge never emits Back, so expose the same exit path as a button there.
+                onExitRequest = if (client.host == RuntimeHost.MOCK) ({ exitRequested = true }) else null,
+                onExitConfirm = {
+                    exitRequested = false
                     scope.launch {
-                        status = try {
-                            client.requestTossLogin()
-                            "인가 결과를 받았어요. 실제 서비스는 서버에서 교환해야 해요."
+                        try {
+                            client.closeScreen()
                         } catch (e: CancellationException) {
                             throw e
-                        } catch (e: AppsInTossException) {
-                            "로그인을 완료하지 못했어요: ${e.code}"
+                        } catch (_: Exception) {
+                            message = "화면을 닫지 못했어요."
                         }
                     }
-                }) { Text("토스로 로그인해요") }
-            })
+                },
+                onExitDismiss = { exitRequested = false },
+                onShare = if (client.supports(Capability.SHARE)) {
+                    { text ->
+                        scope.launch {
+                            message = try {
+                                client.shareText(text)
+                                null
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (_: Exception) {
+                                "공유하지 못했어요."
+                            }
+                        }
+                    }
+                } else {
+                    null
+                },
+                message = message,
+            )
         }
     }
 }
