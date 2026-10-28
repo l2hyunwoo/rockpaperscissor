@@ -264,7 +264,7 @@ private fun Arena(round: Round?, phase: Phase, shake: Float, family: FontFamily,
 private fun Fighter(label: String, hand: Hand, family: FontFamily, glow: Color?, handModifier: Modifier) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // The winner's hand sits on a tinted disc so the result shows in the scene, not only in the headline.
-        Box(Modifier.size(132.dp).clip(CircleShape).background(glow?.copy(alpha = 0.12f) ?: Color.Transparent), Alignment.Center) {
+        Box(Modifier.size(132.dp).background(glow?.copy(alpha = 0.12f) ?: Color.Transparent, CircleShape), Alignment.Center) {
             Image(painterResource(hand.image), "$label ${hand.label}", handModifier.size(116.dp))
         }
         Side(label, family)
