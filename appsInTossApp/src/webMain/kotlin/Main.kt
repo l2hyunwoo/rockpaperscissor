@@ -70,7 +70,8 @@ fun main() {
         val haptic: (HapticType) -> Unit = { type ->
             if (client.supports(Capability.HAPTIC)) scope.launchAttempt { client.generateHaptic(type) }
         }
-        Box(Modifier.padding(top = insets.top.dp, bottom = insets.bottom.dp, start = insets.left.dp, end = insets.right.dp)) {
+        // The opaque Toss navigation bar already sits above the WebView, so the status-bar top inset would add a blank band.
+        Box(Modifier.fillMaxSize().background(Color(0xFFF2F4F6)).padding(bottom = insets.bottom.dp, start = insets.left.dp, end = insets.right.dp)) {
             RpsApp(
                 game = game,
                 nickname = nickname,
