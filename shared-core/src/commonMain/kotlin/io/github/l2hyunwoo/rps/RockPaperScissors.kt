@@ -1,5 +1,6 @@
 package io.github.l2hyunwoo.rps
 
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.random.Random
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -25,10 +26,11 @@ fun judge(player: Hand, computer: Hand): Outcome = when {
 fun Random.nextHand(): Hand = Hand.entries[nextInt(Hand.entries.size)]
 
 @Serializable
-data class Record(val wins: Int = 0, val losses: Int = 0, val draws: Int = 0) {
+data class Record(val wins: Int = 0, val losses: Int = 0, val draws: Int = 0, val streak: Int = 0, val bestStreak: Int = 0) {
+    // A draw keeps the current win streak; only a loss resets it.
     fun add(outcome: Outcome): Record = when (outcome) {
-        Outcome.WIN -> copy(wins = wins + 1)
-        Outcome.LOSE -> copy(losses = losses + 1)
+        Outcome.WIN -> (streak + 1).let { copy(wins = wins + 1, streak = it, bestStreak = maxOf(bestStreak, it)) }
+        Outcome.LOSE -> copy(losses = losses + 1, streak = 0)
         Outcome.DRAW -> copy(draws = draws + 1)
     }
 
@@ -38,31 +40,32 @@ data class Record(val wins: Int = 0, val losses: Int = 0, val draws: Int = 0) {
 data class Round(val player: Hand, val computer: Hand, val outcome: Outcome)
 
 interface KeyValueStorage {
-    fun read(key: String): String?
-    fun write(key: String, value: String)
+    suspend fun read(key: String): String?
+    suspend fun write(key: String, value: String)
 }
 
 class MemoryStorage : KeyValueStorage {
     private val values = mutableMapOf<String, String>()
-    override fun read(key: String) = values[key]
-    override fun write(key: String, value: String) {
+    override suspend fun read(key: String) = values[key]
+    override suspend fun write(key: String, value: String) {
         values[key] = value
     }
 }
 
 // Records are scoped to the anonymous user key; without a key nothing is persisted.
-class RpsGame(
+class RpsGame private constructor(
     private val storage: KeyValueStorage,
     private val userKey: String?,
-    private val random: Random = Random.Default,
+    private val random: Random,
+    initial: Record,
 ) {
     val persists: Boolean get() = userKey != null
     var saveFailed: Boolean = false
         private set
-    var record: Record = load()
+    var record: Record = initial
         private set
 
-    fun play(player: Hand): Round {
+    suspend fun play(player: Hand): Round {
         val computer = random.nextHand()
         val outcome = judge(player, computer)
         record = record.add(outcome)
@@ -70,21 +73,38 @@ class RpsGame(
         return Round(player, computer, outcome)
     }
 
-    fun reset() {
+    suspend fun reset() {
         record = Record()
         save()
     }
 
-    private val storageKey get() = "rps-record:$userKey"
-
-    private fun load(): Record {
-        if (userKey == null) return Record()
-        val json = runCatching { storage.read(storageKey) }.getOrNull() ?: return Record()
-        return runCatching { Json.decodeFromString<Record>(json) }.getOrDefault(Record())
+    private suspend fun save() {
+        if (userKey == null) return
+        saveFailed = try {
+            storage.write(storageKey(userKey), Json.encodeToString(Record.serializer(), record))
+            false
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            true
+        }
     }
 
-    private fun save() {
-        if (userKey == null) return
-        saveFailed = runCatching { storage.write(storageKey, Json.encodeToString(Record.serializer(), record)) }.isFailure
+    companion object {
+        suspend fun load(storage: KeyValueStorage, userKey: String?, random: Random = Random.Default): RpsGame {
+            val record = userKey?.let { key ->
+                val json = try {
+                    storage.read(storageKey(key))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
+                json?.let { runCatching { Json.decodeFromString<Record>(it) }.getOrNull() }
+            } ?: Record()
+            return RpsGame(storage, userKey, random, record)
+        }
+
+        private fun storageKey(userKey: String) = "rps-record:$userKey"
     }
 }

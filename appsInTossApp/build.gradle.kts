@@ -17,15 +17,16 @@ kotlin {
             implementation(project(":shared-ui"))
             implementation(libs.compose.ui)
             implementation(libs.compose.material3)
+            implementation(libs.compose.resources)
             implementation(libs.coroutines.core)
-            implementation("io.github.l2hyunwoo:apps-in-toss-sdk:1.0.0-alpha02")
+            implementation("io.github.l2hyunwoo:apps-in-toss-sdk:1.0.0-alpha03")
         }
     }
 }
 
 val sdkWebResources = configurations.create("sdkWebResources")
 dependencies {
-    add(sdkWebResources.name, "io.github.l2hyunwoo:apps-in-toss-sdk:1.0.0-alpha02:web-resources@jar")
+    add(sdkWebResources.name, "io.github.l2hyunwoo:apps-in-toss-sdk:1.0.0-alpha03:web-resources@jar")
 }
 tasks.register<Sync>("prepareAppsInTossBridge") {
     dependsOn(sdkWebResources)
