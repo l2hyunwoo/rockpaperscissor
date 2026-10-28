@@ -1,0 +1,11 @@
+**/build/
+.gradle/
+.kotlin/
+node_modules/
+local.properties
+**/dist/
+*.ait
+.DS_Store
+**/xcuserdata/
+kotlin-js-store/
+.yarn/
